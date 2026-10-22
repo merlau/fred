@@ -409,6 +409,12 @@ cat <<'EOF'
         try_files $uri =404;
     }
 
+    # Google Workspace client secret runtime config (never cached)
+    location = /google-auth.json {
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+        try_files $uri =404;
+    }
+
     # Hashed bundles never change, so cache them for good; a missing one must
     # 404, not fall back to index.html, which the browser rejects as a module.
     location ^~ /assets/ {
@@ -442,5 +448,12 @@ cat <<'EOF'
 }
 EOF
 } > "${FRONTEND_NGINX_CONFIG}"
+
+# Generate runtime Google auth client secret if injected via environment
+if [ -n "${GOOGLE_CLIENT_SECRET:-}" ]; then
+    cat <<EOF > /usr/share/nginx/html/google-auth.json
+{"client_secret":"${GOOGLE_CLIENT_SECRET}"}
+EOF
+fi
 
 exec nginx -g 'daemon off;'

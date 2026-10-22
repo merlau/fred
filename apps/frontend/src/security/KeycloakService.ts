@@ -13,23 +13,26 @@
 // limitations under the License.
 
 import { v5 } from "uuid";
+import type { BrowserSession } from "./BrowserSession";
+import { GoogleBrowserSession } from "./GoogleBrowserSession";
 import { OidcBrowserSession } from "./OidcBrowserSession";
 
 let isSecurityEnabled = false;
-let oidcSession: OidcBrowserSession | null = null;
-let identityProvider: "keycloak" | "oidc" = "keycloak";
+let oidcSession: BrowserSession | null = null;
+let identityProvider: "keycloak" | "oidc" | "google" = "keycloak";
 let identityIssuer = "";
 let identityClientId = "";
 let uidClaim = "sub";
 let rolesClaim: string[] | null = null;
 
 export interface BrowserAuthOptions {
-  provider?: "keycloak" | "oidc";
+  provider?: "keycloak" | "oidc" | "google";
   scope?: string | null;
   user_directory?: "keycloak" | "local";
   uid_claim?: string;
   roles_claim?: string[] | null;
   redirect_uri?: string;
+  client_secret?: string;
 }
 
 let sessionInvalidated = false;
@@ -148,19 +151,33 @@ export function createKeycloakInstance(
 ) {
   if (!oidcSession) {
     isSecurityEnabled = true;
-    identityProvider = options.provider ?? "keycloak";
     identityIssuer = keycloak_url.replace(/\/+$/, "");
     identityClientId = keycloak_client_id;
     uidClaim = options.uid_claim ?? "sub";
     rolesClaim = options.roles_claim ?? null;
     localStorage.removeItem("keycloak_token");
-    oidcSession = new OidcBrowserSession(
-      identityIssuer,
-      identityClientId,
-      options.scope ?? undefined,
-      options.redirect_uri ?? `${window.location.origin}/`,
-      identityProvider,
-    );
+
+    const isGoogle = options.provider === "google" || identityIssuer.includes("accounts.google.com");
+
+    identityProvider = isGoogle ? "google" : (options.provider ?? "keycloak");
+
+    if (identityProvider === "google") {
+      oidcSession = new GoogleBrowserSession({
+        issuer: identityIssuer,
+        clientId: identityClientId,
+        clientSecret: options.client_secret,
+        apiScope: options.scope ?? undefined,
+        redirectUri: options.redirect_uri ?? `${window.location.origin}/`,
+      });
+    } else {
+      oidcSession = new OidcBrowserSession(
+        identityIssuer,
+        identityClientId,
+        options.scope ?? undefined,
+        options.redirect_uri ?? `${window.location.origin}/`,
+        identityProvider,
+      );
+    }
   }
   return oidcSession.manager;
 }
@@ -248,7 +265,7 @@ const GetUserRoles = (): string[] => {
 
 const GetUserName = (): string | null => {
   if (!isSecurityEnabled) return DEV_USERNAME;
-  return GetTokenParsed()?.preferred_username || null;
+  return GetTokenParsed()?.preferred_username || GetTokenParsed()?.email || null;
 };
 
 const GetUserFullName = (): string | null => {
@@ -279,7 +296,7 @@ const GetUserId = (): string | null => {
   if (!isSecurityEnabled) return DEV_USERNAME;
   const value = GetTokenParsed()?.[uidClaim];
   if (typeof value !== "string" || !value) return null;
-  return identityProvider === "oidc" && !isPythonUuid(value) ? v5(`${identityIssuer}#${value}`, v5.URL) : value;
+  return identityProvider !== "keycloak" && !isPythonUuid(value) ? v5(`${identityIssuer}#${value}`, v5.URL) : value;
 };
 
 /**

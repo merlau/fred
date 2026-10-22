@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ErrorResponse, UserManager, type User } from "oidc-client-ts";
+import type { BrowserSession } from "./BrowserSession";
 
 const REFRESH_TIMEOUT_MS = 8_000;
 const TERMINAL_RENEWAL_ERRORS = new Set([
@@ -24,7 +25,7 @@ const TERMINAL_RENEWAL_ERRORS = new Set([
 ]);
 
 /** Browser OIDC lifecycle kept behind the existing KeyCloakService facade. */
-export class OidcBrowserSession {
+export class OidcBrowserSession implements BrowserSession {
   readonly manager: UserManager;
   private user: User | null = null;
   private generation = 0;

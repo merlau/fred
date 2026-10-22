@@ -359,3 +359,44 @@ describe.each(["keycloak", "oidc"] as const)("%s browser authentication", (provi
     expect(state.signinSilent).toHaveBeenCalledOnce();
   });
 });
+
+describe("google browser authentication", () => {
+  const googleOptions = {
+    provider: "google" as const,
+    client_secret: "mock-secret-456",
+  };
+
+  it("configures dedicated Google parameters without offline_access scope", async () => {
+    const { createKeycloakInstance, KeyCloakService } = await import("./KeycloakService");
+    createKeycloakInstance("https://accounts.google.com/", "ui-google", googleOptions);
+    expect(state.settings).toMatchObject({
+      authority: "https://accounts.google.com",
+      client_id: "ui-google",
+      client_secret: "mock-secret-456",
+      client_authentication: "client_secret_post",
+      response_type: "code",
+      disablePKCE: false,
+      scope: "openid profile email",
+      extraQueryParams: { access_type: "offline" },
+    });
+    expect(KeyCloakService.GetKeycloakRealmConfig()).toBeNull();
+  });
+
+  it("derives deterministic UUIDv5 for Google string subject IDs and falls back to email username", async () => {
+    const googleClaims = {
+      sub: "108342738947239847293",
+      email: "alice@nemos.s3ns.cloud",
+      name: "Alice Smith",
+    };
+    const callbackUser = user(googleClaims);
+    state.signinRedirectCallback.mockResolvedValue(callbackUser);
+    window.history.replaceState({}, "", "/?code=dummy&state=dummy");
+    const { createKeycloakInstance, KeyCloakService } = await import("./KeycloakService");
+    createKeycloakInstance("https://accounts.google.com", "ui-google", googleOptions);
+    const authenticated = vi.fn();
+    KeyCloakService.CallLogin(authenticated);
+    await vi.waitFor(() => expect(authenticated).toHaveBeenCalledOnce());
+    expect(KeyCloakService.GetUserName()).toBe("alice@nemos.s3ns.cloud");
+    expect(KeyCloakService.GetUserId()).toBe(v5("https://accounts.google.com#108342738947239847293", v5.URL));
+  });
+});
